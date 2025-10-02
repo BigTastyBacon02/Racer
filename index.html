@@ -1,1 +1,296 @@
-<!doctype html><html><head><meta charset='utf-8'><title>Highway Tycoon</title></head><body><h1>Highway Tycoon läuft 🚗⚡</h1><p>Alle Dateien sind drin. Öffne index.html im Browser oder lege sie ins GitHub Repo.</p></body></html>
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Highway Tycoon: Meme Racer Inc.</title>
+
+<link rel="manifest" href="manifest.webmanifest?v=1">
+<meta name="theme-color" content="#0b0b10">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Highway Tycoon">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png">
+
+<style>
+  :root{--ui:#ffe000;--fg:#e8e8e8;--bg:#0b0b10;--pink:#ff2e7a;--cyan:#38e6ff;--card:#14141a;--line:#2a2a33;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Arial,sans-serif;touch-action:none}
+  #wrap{position:fixed;inset:0;overflow:hidden;background:#000}
+  canvas{width:100%;height:100%;display:block;image-rendering:pixelated;background:#000}
+  .hud{position:absolute;left:0;right:0;top:0;padding:8px 10px;pointer-events:none;display:flex;justify-content:space-between;gap:8px;font-weight:800;text-shadow:0 1px 0 #000,0 0 6px #000}
+  .hud .row{display:flex;gap:10px;align-items:center}
+  .badge{background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18);padding:6px 10px;border-radius:10px}
+  .boostbar{width:150px;height:12px;border:1px solid rgba(255,255,255,.28);border-radius:999px;overflow:hidden;background:rgba(0,0,0,.35)}
+  .boostbar>div{height:100%;background:linear-gradient(90deg,#fff,var(--pink));width:0%}
+  .touch{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;pointer-events:auto}
+  .btn{user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none;color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center}
+  .btn span{opacity:.35;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);padding:10px 14px;border-radius:10px}
+  .btn:active span{opacity:.9}
+  .btn-left{grid-area:2/1/3/2}.btn-right{grid-area:2/2/3/3}.btn-boost{position:absolute;right:10px;bottom:10px}
+  .overlay{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px}
+  .panel{position:relative;max-width:920px;width:clamp(320px,92vw,920px);border:2px solid rgba(255,255,255,.08);background:rgba(10,10,12,.92);backdrop-filter:blur(8px);border-radius:18px;padding:20px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .logo{font-weight:900;letter-spacing:.6px;margin:0 0 10px 0;font-size:32px;background:linear-gradient(90deg,var(--ui),#fff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 20px rgba(255,224,0,.25)}
+  .subtitle{opacity:.85}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:center;margin-top:16px}
+  button{cursor:pointer;background:var(--ui);color:#000;font-weight:900;border:none;border-radius:12px;padding:12px 18px}
+  button.secondary{background:#17171b;color:#eaeaea;border:1px solid #2a2a2f}
+  .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.12);padding:8px 12px;border-radius:999px;font-size:12px;pointer-events:none}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:12px;margin-top:12px}
+  .card{background:#14141a;border:1px solid #2a2a33;border-radius:14px;text-align:left;padding:12px}
+  .card h3{margin:0 0 4px 0;font-size:16px}
+  .meter{height:10px;background:#0f0f12;border:1px solid #292933;border-radius:999px;overflow:hidden}
+  .meter>div{height:100%;background:linear-gradient(90deg,#38e6ff,#9af6ff)}
+  .shop{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .money{font-weight:900;color:#ffe000}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" aria-label="Highway Tycoon Racer"></canvas>
+
+  <div class="hud" id="hud" style="display:none">
+    <div class="row">
+      <div class="badge">Coins <span id="uiCoins">0</span></div>
+      <div class="badge">Überholt <span id="uiPassed">0</span></div>
+      <div class="badge">Zeit <span id="uiTime">0</span>s</div>
+    </div>
+    <div class="row">
+      <div class="badge">Boost</div>
+      <div class="boostbar"><div id="boostFill"></div></div>
+      <div class="badge" id="uiFPS" style="min-width:52px;text-align:right;">60</div>
+    </div>
+  </div>
+
+  <div class="touch" id="touch" style="display:none">
+    <div class="btn btn-left" data-act="left"><span>◀</span></div>
+    <div class="btn btn-right" data-act="right"><span>▶</span></div>
+    <div class="btn btn-boost" data-act="boost"><span>BOOST</span></div>
+  </div>
+
+  <div class="overlay" id="menu">
+    <div class="panel">
+      <h1 class="logo">Highway Tycoon</h1>
+      <div class="subtitle">Racing + Aufbau + Internet-Humor. Werde CEO deiner eigenen Autobahn-Legende.</div>
+      <div class="row">
+        <button id="btnPlay">Rennen starten 🚗</button>
+        <button class="secondary" id="btnTycoon">Bauen & Upgrades 🏗️</button>
+      </div>
+      <div class="subtitle" style="margin-top:10px;opacity:.7">Pro-Tipp: „Zum Home-Bildschirm hinzufügen“ für App-Feeling.</div>
+    </div>
+  </div>
+
+  <div class="overlay" id="build" style="display:none">
+    <div class="panel">
+      <h2 class="logo">Meme-Racer GmbH — HQ</h2>
+      <div>Coins: <span class="money" id="moneyA">0</span></div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Werkstatt 🔧 <small id="lvlWorkshop">(Lv1)</small></h3>
+          <div>Erhöht Topspeed & Boost-Wirkung.</div>
+          <div class="meter"><div id="mWorkshop" style="width:20%"></div></div>
+          <div class="shop">
+            <button id="upWorkshop">Upgrade (100)</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Raststätte ☕ <small id="lvlStation">(Lv1)</small></h3>
+          <div>Mehr Zeit, langsamere Erschöpfung.</div>
+          <div class="meter"><div id="mStation" style="width:20%"></div></div>
+          <div class="shop">
+            <button id="upStation">Upgrade (120)</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Marketing 📣 <small id="lvlMarketing">(Lv1)</small></h3>
+          <div>Coin-Multiplikator. Mehr Überholprestige™.</div>
+          <div class="meter"><div id="mMarketing" style="width:20%"></div></div>
+          <div class="shop">
+            <button id="upMarketing">Upgrade (150)</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Garage 🚗 <small id="lvlGarage">(Lv1)</small></h3>
+          <div>Neue Karren & Stylepunkte.</div>
+          <div class="meter"><div id="mGarage" style="width:20%"></div></div>
+          <div class="shop">
+            <button id="upGarage">Upgrade (200)</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="btnBack">Zurück</button>
+        <button id="btnPlayFromBuild" class="secondary">Rennen starten</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="over" style="display:none">
+    <div class="panel">
+      <h2 class="logo">Game Over</h2>
+      <div id="stats"></div>
+      <div class="row">
+        <button id="btnAgain">Nochmal!</button>
+        <button class="secondary" id="btnMenu">Menü</button>
+        <button id="btnGoBuild">Bauen & Upgrades</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" style="display:none">Pause – P zum Fortsetzen</div>
+</div>
+
+<script>
+(() => {
+  const LOW_W=192, LOW_H=108, SCALE_FOV=72, LANE_COUNT=3;
+  const BASE={TOPSPEED:220, BOOST_MULT:1.45, BOOST_RECHARGE:.12, BOOST_DRAIN:.7, TIME:30, COIN_PER_PASS:2};
+  const BUILDING={
+    workshop:{price:100, per:1.18, max:10, effect:(lv)=>({top:1+lv*0.05, boost:1+lv*0.04})},
+    station:{price:120, per:1.2,  max:10, effect:(lv)=>({time:1+lv*0.06})},
+    marketing:{price:150, per:1.22, max:10, effect:(lv)=>({coins:1+lv*0.12})},
+    garage:{price:200, per:1.25, max:10, effect:(lv)=>({style:lv})},
+  };
+  const QUIPS=["Blinker? Kenn ich nur von anderen.","Boost ist Liebe.","Überholprestige™ +1","NPC Car #404 hat Angst.","Bass boosted Realität.","Reichweitenangst im Rückspiegel.","Schneller als dein WLAN."];
+
+  const el={cvs:document.getElementById('game'),hud:document.getElementById('hud'),
+    uiCoins:document.getElementById('uiCoins'),uiPassed:document.getElementById('uiPassed'),uiTime:document.getElementById('uiTime'),
+    boostFill:document.getElementById('boostFill'),fps:document.getElementById('uiFPS'),
+    menu:document.getElementById('menu'),build:document.getElementById('build'),over:document.getElementById('over'),
+    stats:document.getElementById('stats'),toast:document.getElementById('toast'),
+    btnPlay:document.getElementById('btnPlay'),btnTycoon:document.getElementById('btnTycoon'),
+    btnBack:document.getElementById('btnBack'),btnPlayFromBuild:document.getElementById('btnPlayFromBuild'),
+    btnAgain:document.getElementById('btnAgain'),btnMenu:document.getElementById('btnMenu'),btnGoBuild:document.getElementById('btnGoBuild'),
+    moneyA:document.getElementById('moneyA'),
+    mWorkshop:document.getElementById('mWorkshop'),mStation:document.getElementById('mStation'),
+    mMarketing:document.getElementById('mMarketing'),mGarage:document.getElementById('mGarage'),
+    lvlWorkshop:document.getElementById('lvlWorkshop'),lvlStation:document.getElementById('lvlStation'),
+    lvlMarketing:document.getElementById('lvlMarketing'),lvlGarage:document.getElementById('lvlGarage'),
+    upWorkshop:document.getElementById('upWorkshop'),upStation:document.getElementById('upStation'),
+    upMarketing:document.getElementById('upMarketing'),upGarage:document.getElementById('upGarage'),
+    touch:document.getElementById('touch')
+  };
+  const ctx=el.cvs.getContext('2d'); ctx.imageSmoothingEnabled=false;
+  function fit(){const w=Math.max(1,Math.floor(innerWidth)),h=Math.max(1,Math.floor(innerHeight));el.cvs.width=w*devicePixelRatio;el.cvs.height=h*devicePixelRatio;el.cvs.style.width=w+'px';el.cvs.style.height=h+'px';}
+  addEventListener('resize',fit,{passive:true}); addEventListener('orientationchange',()=>setTimeout(fit,200),{passive:true}); fit();
+
+  const SAVE_KEY='highway-tycoon-save-v1';
+  const save = JSON.parse(localStorage.getItem(SAVE_KEY) || '{"coins":0,"b":{"workshop":1,"station":1,"marketing":1,"garage":1}}');
+  function persist(){ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
+
+  function priceOf(key){ const base=BUILDING[key].price, per=BUILDING[key].per, lv=save.b[key]; return Math.round(base*(per**(lv-1))); }
+  function updateBuildUI(){
+    el.moneyA.textContent = save.coins|0;
+    const keys=['workshop','station','marketing','garage'];
+    keys.forEach(k=>{
+      const lv=save.b[k]; const meter=Math.min(100, 10+ (lv-1)*(90/(BUILDING[k].max-1)));
+      document.getElementById('m'+k[0].toUpperCase()+k.slice(1)).style.width= meter+'%';
+      document.getElementById('lvl'+k[0].toUpperCase()+k.slice(1)).textContent='(Lv'+lv+')';
+      document.getElementById('up'+k[0].toUpperCase()+k.slice(1)).textContent = 'Upgrade ('+priceOf(k)+')';
+    });
+  }
+  function buy(k){
+    const price=priceOf(k); if(save.coins<price) return;
+    if(save.b[k]>=BUILDING[k].max) return;
+    save.coins-=price; save.b[k]++; persist(); updateBuildUI();
+  }
+  el.upWorkshop.onclick=()=>buy('workshop');
+  el.upStation.onclick=()=>buy('station');
+  el.upMarketing.onclick=()=>buy('marketing');
+  el.upGarage.onclick=()=>buy('garage');
+
+  const input={left:false,right:false,boost:false};
+  function kb(e,down){const k=e.key.toLowerCase(); if(k==='arrowleft'||k==='a')input.left=down; if(k==='arrowright'||k==='d')input.right=down; if(k===' '||k==='b')input.boost=down; if(k==='p'&&down)togglePause();}
+  addEventListener('keydown',e=>kb(e,true)); addEventListener('keyup',e=>kb(e,false));
+  function setTouch(act,down){ if(act==='left')input.left=down; if(act==='right')input.right=down; if(act==='boost')input.boost=down; }
+  ['left','right','boost'].forEach(act=>[...document.querySelectorAll(`[data-act="${act}"]`)].forEach(elm=>{
+    elm.addEventListener('pointerdown',e=>{e.preventDefault();setTouch(act,true);});
+    elm.addEventListener('pointerup',e=>{e.preventDefault();setTouch(act,false);});
+    elm.addEventListener('pointercancel',()=>setTouch(act,false));
+    elm.addEventListener('pointerleave',()=>setTouch(act,false));
+  }));
+
+  const state={running:false,paused:false,t:0,passed:0,coins:0,boost:0.3,x:0,time:30,cars:[],spawn:3};
+  function clamp(v,a,b){return Math.max(a,Math.min(b,v))} function choice(a){return a[(Math.random()*a.length)|0]}
+  function laneToX(i){ const span=1.6; const s=(i-(LANE_COUNT-1)/2)/((LANE_COUNT-1)/2); return s*span; }
+
+  function derived(){
+    const w=(1+save.b.workshop*0.05), b=(1+save.b.workshop*0.04), t=(1+save.b.station*0.06), m=(1+save.b.marketing*0.12);
+    return {TOPSPEED:BASE.TOPSPEED*w, BOOST_MULT:BASE.BOOST_MULT*b, TIME:Math.round(BASE.TIME*t), COIN_PER_PASS:Math.round(BASE.COIN_PER_PASS*m)};
+  }
+
+  function drawCar(g,x,z,col="#c9b27a",ev=false){
+    const SCALE=70, cx=(LOW_W/2)+x*(SCALE/(z+0.001))*LOW_W*0.25, cy=LOW_H*0.62 - z*(SCALE/(z+0.001))*8;
+    const sc=SCALE/(z+0.001); const w=.25*sc*LOW_W, h=.1*sc*LOW_H;
+    g.fillStyle="rgba(0,0,0,0.25)"; g.fillRect(cx-w*0.6,cy+h*0.9,w*1.2,h*0.3);
+    g.fillStyle=col; g.fillRect(cx-w,cy,w*2,h);
+    g.fillStyle=ev?"#6de1ff":"#ffd35a"; g.fillRect(cx-w*0.7,cy+h*0.1,w*1.4,h*0.2);
+    g.fillStyle="#2b2b2b"; g.fillRect(cx-w,cy+h*0.7,w*2,h*0.3);
+  }
+  function drawRoad(g){
+    g.fillStyle="#101419"; g.fillRect(0,0,LOW_W,LOW_H);
+    g.fillStyle="#20242a"; g.beginPath(); g.moveTo(LOW_W*0.15,LOW_H*0.62); g.lineTo(LOW_W*0.85,LOW_H*0.62); g.lineTo(LOW_W,LOW_H); g.lineTo(0,LOW_H); g.closePath(); g.fill();
+    g.fillStyle="#cfcfcf"; for(let i=0;i<14;i++){const z=i*1.0+(state.t*2.2)%1;const sc=70/(z+0.001);const w=1.5+16*sc;const y=LOW_H*0.62+(z*sc*30);const x1=LOW_W*0.33-w*0.5, x2=LOW_W*0.66-w*0.5; g.fillRect(x1,y,w,2); g.fillRect(x2,y,w,2);}
+  }
+
+  function spawn(){
+    const lane=(Math.random()*LANE_COUNT)|0; const x=laneToX(lane); const z=3+Math.random()*4;
+    const ev=Math.random()<0.8; const body = ev? "#bcd6ff" : "#ffb86b";
+    state.cars.push({lane,x,z,v: 55+Math.random()*65,body,ev,passed:false});
+  }
+
+  let last=performance.now(), fps=60;
+  function loop(now){
+    requestAnimationFrame(loop);
+    if(!state.running||state.paused) return;
+    const dt=Math.min(0.05,(now-last)/1000); last=now; fps=fps*0.9+(1/dt)*0.1; el.fps.textContent=Math.round(fps);
+
+    const D=derived();
+    state.t+=dt; state.time-=dt; if(state.time<=0){return over();}
+
+    const steer=(input.right?1:0)-(input.left?1:0); state.x=clamp(state.x+steer*dt*1.7,-1,1);
+    state.boost=clamp(state.boost+.12*dt,0,1); const boosting = input.boost && state.boost>0.05;
+    if(boosting){ state.boost=clamp(state.boost-.7*dt,0,1); }
+    el.boostFill.style.width=Math.round(state.boost*100)+"%";
+
+    state.spawn-=dt*(1.2 + state.passed*0.01); if(state.spawn<=0){ spawn(); state.spawn=1.0; }
+    for(const c of state.cars){ c.z-=dt*( (D.TOPSPEED*(boosting?1.1:0.8))/120 ); }
+    state.cars=state.cars.filter(c=>c.z>-1);
+
+    for(const c of state.cars){
+      if(!c.passed && c.z<0.6){ c.passed=true; state.passed++; state.coins += D.COIN_PER_PASS; toast(choice(QUIPS)); }
+      const dz=Math.abs(c.z-0.6), dx=Math.abs(state.x*1.6 - c.x);
+      const hit = dz<0.28 && dx<0.28;
+      if(hit){ return over(); }
+    }
+
+    el.uiCoins.textContent = (save.coins + state.coins);
+    el.uiPassed.textContent = state.passed;
+    el.uiTime.textContent = Math.ceil(state.time);
+
+    const sx=el.cvs.width/LOW_W, sy=el.cvs.height/LOW_H; ctx.setTransform(sx,0,0,sy,0,0); ctx.clearRect(0,0,LOW_W,LOW_H);
+    drawRoad(ctx);
+    for(const c of state.cars){ drawCar(ctx,c.x,c.z,c.body,c.ev); }
+    drawCar(ctx,state.x*1.6,0.6,"#c9b27a",false);
+  }
+
+  function toast(msg){ el.toast.textContent = msg; el.toast.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>el.toast.style.display='none',1000); }
+  function start(){ el.menu.style.display='none'; el.build.style.display='none'; el.over.style.display='none'; el.hud.style.display='flex'; el.touch.style.display='grid'; const D=derived(); state.running=true; state.paused=false; state.t=0; state.passed=0; state.coins=0; state.boost=.3; state.x=0; state.time=D.TIME; state.cars.length=0; state.spawn=0.6; requestAnimationFrame(loop); }
+  function over(){ state.running=false; el.hud.style.display='none'; el.touch.style.display='none'; el.over.style.display='flex'; save.coins += state.coins; persist(); el.stats.innerHTML = 'Überholt: '+state.passed+' — Coins: +'+state.coins; updateBuildUI(); }
+  function togglePause(){ if(!state.running)return; state.paused=!state.paused; el.toast.style.display=state.paused?'block':'none';}
+
+  el.btnPlay.onclick=start; el.btnPlayFromBuild.onclick=start; el.btnAgain.onclick=start;
+  el.btnTycoon.onclick=()=>{ el.menu.style.display='none'; el.build.style.display='flex'; updateBuildUI(); };
+  el.btnGoBuild.onclick=()=>{ el.over.style.display='none'; el.build.style.display='flex'; updateBuildUI(); };
+  el.btnBack.onclick=()=>{ el.build.style.display='none'; el.menu.style.display='flex'; };
+  el.btnMenu.onclick=()=>{ el.over.style.display='none'; el.menu.style.display='flex'; };
+
+  updateBuildUI();
+  if('serviceWorker' in navigator){ addEventListener('load',()=>{ navigator.serviceWorker.register('./sw.js?v=1').catch(()=>{}); }); }
+  addEventListener('touchmove', e=>{ e.preventDefault(); }, { passive:false });
+})();
+</script>
+</body>
+</html>
