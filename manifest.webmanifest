@@ -1,13 +1,13 @@
 {
-  "name": "Highway Tycoon: Meme Racer Inc.",
-  "short_name": "Highway Tycoon",
+  "name": "LEON'S TRANS AM RACER",
+  "short_name": "Trans Am Racer",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#0b0b10",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {"src":"assets/icons/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"assets/icons/icon-512.png","sizes":"512x512","type":"image/png"}
   ]
 }
