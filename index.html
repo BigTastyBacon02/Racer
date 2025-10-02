@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>LEON'S TRANS AM RACER</title>
-<link rel="manifest" href="manifest.webmanifest?v=1">
+<link rel="manifest" href="manifest.webmanifest?v=2">
 <meta name="theme-color" content="#0b0b10">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -33,6 +33,7 @@
   .tbtn:active span{opacity:1}
   .left{grid-area:2/1/3/2}.right{grid-area:2/2/3/3}.boost{position:absolute;right:10px;bottom:10px}
   .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.12);padding:8px 12px;border-radius:999px;font-size:12px;pointer-events:none}
+  .err{position:absolute;inset:auto 10px 10px 10px;background:#220;border:1px solid #a33;color:#ffb;padding:10px;border-radius:10px;font-family:ui-monospace,monospace;z-index:99;display:none}
   /* Tycoon */
   .grid{display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:12px;margin-top:10px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;text-align:left;padding:12px}
@@ -45,6 +46,7 @@
 <body>
 <div id="wrap">
   <canvas id="cv"></canvas>
+  <div id="err" class="err"></div>
 
   <div class="hud" id="hud" style="display:none">
     <div class="row">
@@ -74,7 +76,7 @@
         <button id="play">Rennen starten 🚗</button>
         <button class="secondary" id="tycoon">Bauen & Upgrades 🏗️</button>
       </div>
-      <div style="opacity:.7;margin-top:10px">Tipp: In Safari/Chrome „Zum Home‑Bildschirm hinzufügen“ → App.</div>
+      <div style="opacity:.7;margin-top:10px">Tipp: In Safari/Chrome „Zum Home-Bildschirm hinzufügen“ → App.</div>
     </div>
   </div>
 
@@ -133,167 +135,131 @@
 </div>
 
 <script>
+// Robust error surface
+const errBox = document.getElementById('err');
+window.addEventListener('error', e => { errBox.style.display='block'; errBox.textContent = String(e.message || e.error || 'Fehler'); });
+window.addEventListener('unhandledrejection', e => { errBox.style.display='block'; errBox.textContent = 'Promise: ' + (e.reason && e.reason.message || e.reason); });
+
 (() => {
-  const cvs=document.getElementById('cv'), g=cvs.getContext('2d'); g.imageSmoothingEnabled=false;
+  // DOM refs (robust, no implicit globals)
+  const $ = (id)=>document.getElementById(id);
+  const cvs=$('cv'), g=cvs.getContext('2d'); g.imageSmoothingEnabled=false;
   function fit(){const w=Math.floor(innerWidth),h=Math.floor(innerHeight);cvs.width=w*devicePixelRatio;cvs.height=h*devicePixelRatio;cvs.style.width=w+'px';cvs.style.height=h+'px';}
   addEventListener('resize',fit,{passive:true}); fit();
 
   const el={
-    hud:document.getElementById('hud'), uiCoins:uiCoins, uiPassed:uiPassed, uiTime:uiTime, boostFill:boostFill, fps:uiFPS,
-    menu:menu, build:build, over:over, stats:stats, touch:document.getElementById('touch'),
-    play:play, tycoon:tycoon, again:again, menuBtn:menuBtn, goBuild:goBuild, back:back, play2:play2,
-    money:money, wl:wl, sl:sl, ml:ml, gl:gl, wm:wm, sm:sm, mm:mm, gm:gm, wu:wu, su:su, mu:mu, gu:gu, toast:toast
+    hud:$('hud'), uiCoins:$('uiCoins'), uiPassed:$('uiPassed'), uiTime:$('uiTime'), boostFill:$('boostFill'), fps:$('uiFPS'),
+    menu:$('menu'), build:$('build'), over:$('over'), stats:$('stats'), touch:$('touch'),
+    play:$('play'), tycoon:$('tycoon'), again:$('again'), menuBtn:$('menuBtn'), goBuild:$('goBuild'), back:$('back'), play2:$('play2'),
+    money:$('money'), wl:$('wl'), sl:$('sl'), ml:$('ml'), gl:$('gl'), wm:$('wm'), sm:$('sm'), mm:$('mm'), gm:$('gm'), wu:$('wu'), su:$('su'), mu:$('mu'), gu:$('gu'), toast:$('toast')
   };
 
-  const IMG={bg:new Image(), car:new Image(), ev:new Image()};
-  IMG.bg.src='assets/ui/bg.png';
-  IMG.car.src='assets/cars/transam.png';
-  IMG.ev.src='assets/cars/fiat.png';
-
-  const SAVE_KEY='ltr-save-v1';
-  const save = JSON.parse(localStorage.getItem(SAVE_KEY) || '{"coins":0,"b":{"w":1,"s":1,"m":1,"g":1}}');
-  function persist(){localStorage.setItem(SAVE_KEY,JSON.stringify(save));}
-
-  function price(base,per,lv){return Math.round(base*Math.pow(per,lv-1));}
-  function updateBuild(){
-    el.money.textContent=save.coins|0;
-    const set=(l,m,lv,max=10)=>{l.textContent='(Lv'+lv+')'; m.style.width=(10+(lv-1)*(90/(max-1)))+'%';};
-    set(el.wl,el.wm,save.b.w); set(el.sl,el.sm,save.b.s); set(el.ml,el.mm,save.b.m); set(el.gl,el.gm,save.b.g);
-    el.wu.textContent='Upgrade ('+price(100,1.18,save.b.w)+')';
-    el.su.textContent='Upgrade ('+price(120,1.20,save.b.s)+')';
-    el.mu.textContent='Upgrade ('+price(150,1.22,save.b.m)+')';
-    el.gu.textContent='Upgrade ('+price(200,1.25,save.b.g)+')';
+  // Ensure images loaded before starting
+  function loadImage(src){
+    return new Promise((resolve,reject)=>{ const i=new Image(); i.onload=()=>resolve(i); i.onerror=()=>reject(new Error('Asset fehlt: '+src)); i.src=src; });
   }
-  function buy(key,base,per){const p=price(base,per,save.b[key]); if(save.coins<p)return; save.coins-=p; save.b[key]++; persist(); updateBuild();}
+  Promise.all([
+    loadImage('assets/ui/bg.png'),
+    loadImage('assets/cars/transam.png'),
+    loadImage('assets/cars/fiat.png')
+  ]).then(([bg,car,ev])=>init(bg,car,ev)).catch(e=>{ errBox.style.display='block'; errBox.textContent=e.message; });
 
-  el.wu.onclick=()=>buy('w',100,1.18);
-  el.su.onclick=()=>buy('s',120,1.20);
-  el.mu.onclick=()=>buy('m',150,1.22);
-  el.gu.onclick=()=>buy('g',200,1.25);
+  function init(BG,CAR,EV){
+    const IMG={bg:BG, car:CAR, ev:EV};
 
-  // --- Game State ---
-  const input={l:false,r:false,b:false};
-  function kb(e,down){const k=e.key.toLowerCase(); if(k==='arrowleft'||k==='a')input.l=down; if(k==='arrowright'||k==='d')input.r=down; if(k===' '||k==='b')input.b=down;}
-  addEventListener('keydown',e=>kb(e,true)); addEventListener('keyup',e=>kb(e,false));
-  ['left','right','boost'].forEach(act=>[...document.querySelectorAll(`[data-act="${act}"]`)].forEach(btn=>{
-    btn.addEventListener('pointerdown',e=>{e.preventDefault(); if(act==='left')input.l=true; if(act==='right')input.r=true; if(act==='boost')input.b=true;});
-    btn.addEventListener('pointerup',()=>{if(act==='left')input.l=false; if(act==='right')input.r=false; if(act==='boost')input.b=false;});
-    btn.addEventListener('pointerleave',()=>{if(act==='left')input.l=false; if(act==='right')input.r=false; if(act==='boost')input.b=false;});
-  }));
+    const SAVE_KEY='ltr-save-v1.1';
+    const save = JSON.parse(localStorage.getItem(SAVE_KEY) || '{"coins":0,"b":{"w":1,"s":1,"m":1,"g":1}}');
+    function persist(){localStorage.setItem(SAVE_KEY,JSON.stringify(save));}
 
-  const S={run:false, t:0, time:30, coins:0, passed:0, boost:.3, x:0, cars:[], spawn:0.5};
-  const QUIPS=["Boost ist Liebe.","Blinker? Kenn ich nur von anderen.","NPC Car #404 hat Angst.","Reichweitenangst im Rückspiegel.","Schneller als dein WLAN."];
+    function price(base,per,lv){return Math.round(base*Math.pow(per,lv-1));}
+    function updateBuild(){
+      el.money.textContent=save.coins|0;
+      const set=(l,m,lv,max=10)=>{l.textContent='(Lv'+lv+')'; m.style.width=(10+(lv-1)*(90/(max-1)))+'%';};
+      set(el.wl,el.wm,save.b.w); set(el.sl,el.sm,save.b.s); set(el.ml,el.mm,save.b.m); set(el.gl,el.gm,save.b.g);
+      el.wu.textContent='Upgrade ('+price(100,1.18,save.b.w)+')';
+      el.su.textContent='Upgrade ('+price(120,1.20,save.b.s)+')';
+      el.mu.textContent='Upgrade ('+price(150,1.22,save.b.m)+')';
+      el.gu.textContent='Upgrade ('+price(200,1.25,save.b.g)+')';
+    }
+    function buy(key,base,per){const p=price(base,per,save.b[key]); if(save.coins<p)return; save.coins-=p; save.b[key]++; persist(); updateBuild();}
+    el.wu.onclick=()=>buy('w',100,1.18);
+    el.su.onclick=()=>buy('s',120,1.20);
+    el.mu.onclick=()=>buy('m',150,1.22);
+    el.gu.onclick=()=>buy('g',200,1.25);
 
-  function D(){ // derived stats from buildings
-    return {
-      TOP: 220*(1+save.b.w*0.05),
-      COIN: Math.round(2*(1+save.b.m*0.12)),
-      TIME: Math.round(30*(1+save.b.s*0.06))
-    };
-  }
+    const input={l:false,r:false,b:false};
+    function kb(e,down){const k=e.key.toLowerCase(); if(k==='arrowleft'||k==='a')input.l=down; if(k==='arrowright'||k==='d')input.r=down; if(k===' '||k==='b')input.b=down;}
+    addEventListener('keydown',e=>kb(e,true)); addEventListener('keyup',e=>kb(e,false));
+    ['left','right','boost'].forEach(act=>[...document.querySelectorAll(`[data-act="${act}"]`)].forEach(btn=>{
+      btn.addEventListener('pointerdown',e=>{e.preventDefault(); if(act==='left')input.l=true; if(act==='right')input.r=true; if(act==='boost')input.b=true;});
+      btn.addEventListener('pointerup',()=>{if(act==='left')input.l=false; if(act==='right')input.r=false; if(act==='boost')input.b=false;});
+      btn.addEventListener('pointerleave',()=>{if(act==='left')input.l=false; if(act==='right')input.r=false; if(act==='boost')input.b=false;});
+    }));
 
-  function toast(msg){ el.toast.textContent=msg; el.toast.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>el.toast.style.display='none',1000); }
+    const S={run:false, t:0, time:30, coins:0, passed:0, boost:.3, x:0, cars:[], spawn:0.5};
+    const QUIPS=["Boost ist Liebe.","Blinker? Kenn ich nur von anderen.","NPC Car #404 hat Angst.","Reichweitenangst im Rückspiegel.","Schneller als dein WLAN."];
+    function D(){return {TOP:220*(1+save.b.w*0.05), COIN:Math.round(2*(1+save.b.m*0.12)), TIME:Math.round(30*(1+save.b.s*0.06))};}
+    function toast(msg){ el.toast.textContent=msg; el.toast.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>el.toast.style.display='none',1000); }
 
-  function start(){
-    el.menu.style.display='none'; el.build.style.display='none'; el.over.style.display='none';
-    el.hud.style.display='flex'; el.touch.style.display='grid';
-    const d=D(); S.run=true; S.t=0; S.time=d.TIME; S.coins=0; S.passed=0; S.boost=.3; S.x=0; S.cars.length=0; S.spawn=0.4;
-    requestAnimationFrame(loop);
-  }
-
-  function over(){
-    S.run=false; el.hud.style.display='none'; el.touch.style.display='none'; el.over.style.display='flex';
-    save.coins += S.coins; persist(); updateBuild();
-    el.stats.innerHTML='Überholt: '+S.passed+' — Coins: +'+S.coins;
-  }
-
-  // Simple lane logic (3 lanes), perspective scale
-  function laneX(i){return [-0.75,0,0.75][i];}
-
-  function spawn(){
-    const lane=(Math.random()*3)|0; const z=3+Math.random()*4;
-    const speed= 60 + Math.random()*40;
-    S.cars.push({lane,x:laneX(lane),z,speed,passed:false});
-  }
-
-  function drawRoad(ctx,w,h,t){
-    const img=IMG.bg;
-    const scale = Math.max(w/img.width, h/img.height);
-    const iw=img.width*scale, ih=img.height*scale;
-    const y = (t*300)%ih;
-    ctx.drawImage(img, (w-iw)/2, -y, iw, ih);
-    ctx.drawImage(img, (w-iw)/2, -y+ih, iw, ih);
-  }
-
-  function drawCar(ctx, img, x, z){
-    const W=cvs.width, H=cvs.height;
-    const sc = 0.22/(z+0.001);
-    const w = img.width*sc*H/1152;
-    const h = img.height*sc*H/1152;
-    const cx = W/2 + x*H*0.22/(z+0.001);
-    const cy = H*0.62 - z*H*0.08;
-    ctx.save();
-    ctx.globalAlpha=1;
-    ctx.drawImage(img, cx-w/2, cy-h/2, w, h);
-    ctx.restore();
-  }
-
-  let last=performance.now(), fps=60;
-  function loop(now){
-    if(!S.run) return;
-    requestAnimationFrame(loop);
-    const dt=Math.min(0.05,(now-last)/1000); last=now; fps=fps*0.9+(1/dt)*0.1; el.fps.textContent=Math.round(fps);
-
-    // Derived
-    const d=D();
-
-    // time & spawn
-    S.t+=dt; S.time-=dt; if(S.time<=0){return over();}
-    S.spawn-=dt*(1.1+S.passed*0.02); if(S.spawn<=0){ spawn(); S.spawn=0.9; }
-
-    // input
-    const steer=(input.r?1:0)-(input.l?1:0); S.x=Math.max(-1,Math.min(1,S.x+steer*dt*1.8));
-    S.boost=Math.max(0,Math.min(1,S.boost + 0.12*dt)); const boosting = input.b && S.boost>0.05;
-    if(boosting) S.boost = Math.max(0,S.boost - 0.7*dt);
-    el.boostFill.style.width = Math.round(S.boost*100)+'%';
-
-    // move cars
-    for(const c of S.cars){ c.z -= dt*((d.TOP*(boosting?1.1:0.8))/120); }
-    S.cars = S.cars.filter(c=>c.z>-1);
-
-    // collisions & passes
-    for(const c of S.cars){
-      if(!c.passed && c.z<0.6){ c.passed=true; S.passed++; S.coins += d.COIN; toast(QUIPS[(Math.random()*QUIPS.length)|0]); }
-      const dz=Math.abs(c.z-0.6), dx=Math.abs(S.x*1.6 - c.x);
-      if(dz<0.28 && dx<0.28){ return over(); }
+    function start(){
+      el.menu.style.display='none'; el.build.style.display='none'; el.over.style.display='none';
+      el.hud.style.display='flex'; el.touch.style.display='grid';
+      const d=D(); S.run=true; S.t=0; S.time=d.TIME; S.coins=0; S.passed=0; S.boost=.3; S.x=0; S.cars.length=0; S.spawn=0.4;
+      requestAnimationFrame(loop);
+    }
+    function over(){
+      S.run=false; el.hud.style.display='none'; el.touch.style.display='none'; el.over.style.display='flex';
+      save.coins += S.coins; persist(); updateBuild();
+      el.stats.innerHTML='Überholt: '+S.passed+' — Coins: +'+S.coins;
+    }
+    function laneX(i){return [-0.75,0,0.75][i];}
+    function spawn(){
+      const lane=(Math.random()*3)|0; const z=3+Math.random()*4; const speed=60+Math.random()*40;
+      S.cars.push({lane,x:laneX(lane),z,speed,passed:false});
+    }
+    function drawRoad(ctx,w,h,t){
+      const img=IMG.bg; const scale=Math.max(w/img.width, h/img.height); const iw=img.width*scale, ih=img.height*scale; const y=(t*300)%ih;
+      ctx.drawImage(img,(w-iw)/2,-y,iw,ih); ctx.drawImage(img,(w-iw)/2,-y+ih,iw,ih);
+    }
+    function drawCar(ctx,img,x,z){
+      const W=cvs.width, H=cvs.height;
+      const sc=0.22/(z+0.001), w=img.width*sc*H/1152, h=img.height*sc*H/1152;
+      const cx=W/2 + x*H*0.22/(z+0.001), cy=H*0.62 - z*H*0.08;
+      ctx.drawImage(img,cx-w/2,cy-h/2,w,h);
+    }
+    let last=performance.now(), fps=60;
+    function loop(now){
+      if(!S.run) return;
+      requestAnimationFrame(loop);
+      const dt=Math.min(0.05,(now-last)/1000); last=now; fps=fps*0.9+(1/dt)*0.1; el.fps.textContent=Math.round(fps);
+      const d=D();
+      S.t+=dt; S.time-=dt; if(S.time<=0){return over();}
+      S.spawn-=dt*(1.1+S.passed*0.02); if(S.spawn<=0){ spawn(); S.spawn=0.9; }
+      const steer=(input.r?1:0)-(input.l?1:0); S.x=Math.max(-1,Math.min(1,S.x+steer*dt*1.8));
+      S.boost=Math.max(0,Math.min(1,S.boost + 0.12*dt)); const boosting=input.b && S.boost>0.05; if(boosting) S.boost=Math.max(0,S.boost-0.7*dt);
+      el.boostFill.style.width=Math.round(S.boost*100)+'%';
+      for(const c of S.cars){ c.z -= dt*((d.TOP*(boosting?1.1:0.8))/120); }
+      S.cars=S.cars.filter(c=>c.z>-1);
+      for(const c of S.cars){
+        if(!c.passed && c.z<0.6){ c.passed=true; S.passed++; S.coins += d.COIN; toast(QUIPS[(Math.random()*QUIPS.length)|0]); }
+        const dz=Math.abs(c.z-0.6), dx=Math.abs(S.x*1.6 - c.x); if(dz<0.28 && dx<0.28){ return over(); }
+      }
+      el.uiCoins.textContent=(save.coins+S.coins); el.uiPassed.textContent=S.passed; el.uiTime.textContent=Math.ceil(S.time);
+      const ctx=g; ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); const W=cvs.clientWidth,H=cvs.clientHeight;
+      ctx.clearRect(0,0,W,H); drawRoad(ctx,W,H,S.t); for(const c of S.cars){ drawCar(ctx,EV,c.x,c.z); } drawCar(ctx,CAR,S.x*1.6,0.6);
     }
 
-    // UI
-    el.uiCoins.textContent = (save.coins + S.coins);
-    el.uiPassed.textContent = S.passed;
-    el.uiTime.textContent = Math.ceil(S.time);
+    // Menu bindings
+    el.play.onclick=start; el.play2.onclick=start; el.again.onclick=start;
+    el.tycoon.onclick=()=>{el.menu.style.display='none'; el.build.style.display='flex'; updateBuild();};
+    el.goBuild.onclick=()=>{el.over.style.display='none'; el.build.style.display='flex'; updateBuild();};
+    el.back.onclick=()=>{el.build.style.display='none'; el.menu.style.display='flex';};
+    el.menuBtn.onclick=()=>{el.over.style.display='none'; el.menu.style.display='flex';};
 
-    // render
-    const ctx=g; ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
-    const W=cvs.clientWidth, H=cvs.clientHeight;
-    ctx.clearRect(0,0,W,H);
-    drawRoad(ctx,W,H,S.t);
-    // draw enemies
-    for(const c of S.cars){ drawCar(ctx, IMG.ev, c.x, c.z); }
-    // player
-    drawCar(ctx, IMG.car, S.x*1.6, 0.6);
-  }
-
-  // menu wiring
-  el.play.onclick=start; el.play2.onclick=start; el.again.onclick=start;
-  el.tycoon.onclick=()=>{el.menu.style.display='none'; el.build.style.display='flex'; updateBuild();};
-  el.goBuild.onclick=()=>{el.over.style.display='none'; el.build.style.display='flex'; updateBuild();};
-  el.back.onclick=()=>{el.build.style.display='none'; el.menu.style.display='flex';};
-  el.menuBtn.onclick=()=>{el.over.style.display='none'; el.menu.style.display='flex';};
-
-  updateBuild();
-  if('serviceWorker' in navigator){ addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=1').catch(()=>{})); }
-  addEventListener('touchmove', e=>{ e.preventDefault(); }, { passive:false });
+    updateBuild();
+    if('serviceWorker' in navigator){ addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=2').catch(()=>{})); }
+    addEventListener('touchmove', e=>{ e.preventDefault(); }, { passive:false });
+  } // init
 })();
 </script>
 </body>
